@@ -1,6 +1,6 @@
 # Snap!
 
-<img src="artwork/snap_cover.png" width="420" alt="両手のV字のハサミで魚を守るカニ">
+<img src="artwork/snap_cover.png" width="480" alt="Snap!のゲーム内タイトル画面。ロゴと両手のV字のハサミがあるカニ">
 
 海のカニが釣り糸を切って、魚を守るGame Boy Color用アクションです。
 ふわっと泳いで、緑の糸をハサミでパチン！
