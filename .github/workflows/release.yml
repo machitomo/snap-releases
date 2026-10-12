@@ -8,7 +8,7 @@ on:
       version:
         description: Existing public tag to release
         required: true
-        default: v0.0.2
+        default: v0.0.3
         type: string
 
 permissions:
