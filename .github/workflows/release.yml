@@ -1,0 +1,70 @@
+name: Publish game release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing public tag to release
+        required: true
+        default: v0.0.1
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify public tag and assets
+        run: |
+          [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$VERSION" != v0.0.0 ]]
+          git checkout --detach "refs/tags/$VERSION"
+          cd release
+          sha256sum --check SHA256SUMS.txt
+          python3 - <<'PY'
+          import os, pathlib, zipfile
+          version = os.environ['VERSION']
+          expected = {'snap.gbc', 'snap_cover.png', 'README.md'}
+          with zipfile.ZipFile(f'snap_{version}.zip') as z:
+              assert set(z.namelist()) == expected and z.testzip() is None
+              for name in expected:
+                  assert z.read(name) == pathlib.Path(name).read_bytes()
+          with zipfile.ZipFile(f'snap_web_{version}.zip') as z:
+              assert z.testzip() is None
+              assert 'index.html' in z.namelist()
+              assert z.read('roms/snap.gbc') == pathlib.Path('snap.gbc').read_bytes()
+              assert len(z.namelist()) == len(set(z.namelist())) <= 1000
+              for info in z.infolist():
+                  assert not info.filename.startswith('/') and '\\' not in info.filename and '..' not in info.filename.split('/')
+                  assert not info.filename.lower().endswith(('.sav','.srm','.ram','.state','.rtc','.c','.h','.ps1','.py'))
+          PY
+      - name: Publish verified assets
+        run: |
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft > "$RUNNER_TEMP/release.json"; then
+            if [[ "$(jq -r .isDraft "$RUNNER_TEMP/release.json")" == false ]]; then
+              echo "Release $VERSION is already published; keeping its assets unchanged."
+              exit 0
+            fi
+          else
+            printf 'Snap! %s\n\nカニのハサミで釣り糸を切って、魚を守ろう。\nふわっと泳ぐ60秒チャレンジ。練習モードもあります。\n\nROM・アート・配布ZIP・Web版ZIPを同梱しています。\n' "$VERSION" > "$RUNNER_TEMP/notes.md"
+            gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Snap! $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+          gh release upload "$VERSION" --repo "$GITHUB_REPOSITORY" --clobber release/snap.gbc release/snap_cover.png "release/snap_$VERSION.zip" "release/snap_web_$VERSION.zip" release/SHA256SUMS.txt
+          gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          echo "[Download $VERSION](https://github.com/$GITHUB_REPOSITORY/releases/tag/$VERSION)" >> "$GITHUB_STEP_SUMMARY"
